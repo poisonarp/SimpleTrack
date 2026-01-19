@@ -1,11 +1,13 @@
-SimpleTrack is a lightweight  Domain and SSL Certificate tracking application built with Google AI Studio. The intended purpose of this app is tracking both Domains and SSL Certificate days to expire with built in SMTP notifications. 
+SimpleTrack is a lightweight  Domain and SSL Certificate tracking application. The intended purpose of this app is tracking both Domains and SSL Certificate days to expire with built in SMTP notifications. 
 
 
 
 ## Run Locally
 
 **Prerequisites:**  Node.js
-Tested on Debian 13 LXC 
+
+
+I have only Tested on Debian 13 LXC 
 
 
 
