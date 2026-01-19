@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import path from 'path';
 import tls from 'tls';
+import dns from 'dns';
 import whois from 'whois-json';
 import nodemailer from 'nodemailer';
 import { fileURLToPath } from 'url';
@@ -19,7 +20,7 @@ const port = process.env.PORT || 3000;
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' })); // Increase limit for bulk imports
 
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
@@ -36,6 +37,7 @@ db.serialize(() => {
     autoRenew INTEGER, 
     status TEXT, 
     lastChecked TEXT,
+    managedBy TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
   
@@ -50,6 +52,7 @@ db.serialize(() => {
     managedBy TEXT, 
     host TEXT, 
     lastChecked TEXT,
+    ipAddress TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
   
@@ -95,15 +98,23 @@ async function sendAlertEmail(user_id, targetName, type, daysRemaining) {
       if (!shouldSend) return resolve(false);
 
       try {
-        const transporter = nodemailer.createTransport({
+        const transportOptions = {
           host: smtp.host,
           port: parseInt(smtp.port),
           secure: smtp.secure,
-          auth: {
+          tls: {
+            rejectUnauthorized: false
+          }
+        };
+
+        if (smtp.useAuth) {
+          transportOptions.auth = {
             user: smtp.user,
             pass: smtp.pass
-          }
-        });
+          };
+        }
+        
+        const transporter = nodemailer.createTransport(transportOptions);
 
         await transporter.sendMail({
           from: `"SimpleTrack Alerts" <${smtp.fromEmail}>`,
@@ -178,15 +189,20 @@ app.post('/api/verify/domain', async (req, res) => {
 app.post('/api/verify/ssl', async (req, res) => {
   const { domain } = req.body;
   if (!domain) return res.status(400).json({ error: 'Domain/Host required' });
+  
   const ssl = await getSSLInfo(domain);
   if (!ssl) return res.status(404).json({ error: 'No SSL certificate found for this host.' });
-  res.json({
-    sslIssuer: ssl.issuer,
-    sslExpiry: ssl.expiry,
-    sslType: ssl.type,
-    managedBy: ssl.managedBy,
-    host: domain,
-    lastChecked: new Date().toISOString()
+
+  dns.lookup(domain, (err, address) => {
+    res.json({
+      sslIssuer: ssl.issuer,
+      sslExpiry: ssl.expiry,
+      sslType: ssl.type,
+      managedBy: ssl.managedBy,
+      host: domain,
+      lastChecked: new Date().toISOString(),
+      ipAddress: err ? 'N/A' : address,
+    });
   });
 });
 
@@ -211,7 +227,7 @@ app.post('/api/sync/:userId', async (req, res) => {
     db.all(`SELECT * FROM ssl_certs WHERE user_id = ?`, [userId], async (err, certs) => {
       if (certs) {
         for (const s of certs) {
-          const info = await getSSLInfo(s.domain);
+          const info = await getSSLInfo(s.host || s.domain);
           if (info) {
             const status = calculateStatus(info.expiry);
             db.run(`UPDATE ssl_certs SET issuer = ?, expiryDate = ?, status = ?, lastChecked = ? WHERE id = ?`, 
@@ -226,6 +242,68 @@ app.post('/api/sync/:userId', async (req, res) => {
       res.json({ success: true, timestamp: now });
     });
   });
+});
+
+app.post('/api/bulk-import', async (req, res) => {
+  const { userId, type, data } = req.body;
+  if (!userId || !type || !Array.isArray(data)) {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const item of data) {
+    try {
+      if (type === 'domains') {
+        const domainName = item.domain;
+        if (!domainName) { failCount++; continue; }
+        const result = await getDomainInfo(domainName);
+        if (result.registrar === 'Unknown') { failCount++; continue; }
+        const newDomain = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: domainName,
+          registrar: result.registrar,
+          expiryDate: result.expiry,
+          autoRenew: true,
+          status: calculateStatus(result.expiry),
+          lastChecked: new Date().toISOString(),
+          managedBy: item.managedBy || null
+        };
+        db.run(`INSERT INTO domains (id, user_id, name, registrar, expiryDate, autoRenew, status, lastChecked, managedBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+          [newDomain.id, userId, newDomain.name, newDomain.registrar, newDomain.expiryDate, newDomain.autoRenew, newDomain.status, newDomain.lastChecked, newDomain.managedBy]);
+        successCount++;
+      } else if (type === 'ssl') {
+        const domainName = item.domain;
+        if (!domainName) { failCount++; continue; }
+        
+        const hostToVerify = item.host || domainName;
+        const result = await getSSLInfo(hostToVerify);
+        if (!result) { failCount++; continue; }
+        
+        const ipAddress = await new Promise((resolve) => dns.lookup(hostToVerify, (err, address) => resolve(err ? null : address)));
+
+        const newSSL = {
+          id: Math.random().toString(36).substr(2, 9),
+          domain: domainName,
+          issuer: result.issuer,
+          expiryDate: result.expiry,
+          type: result.type,
+          status: calculateStatus(result.expiry),
+          managedBy: item.managedBy || result.managedBy,
+          host: hostToVerify,
+          lastChecked: new Date().toISOString(),
+          ipAddress: item.ipAddress || ipAddress || 'N/A',
+        };
+        db.run(`INSERT INTO ssl_certs (id, user_id, domain, issuer, expiryDate, type, status, managedBy, host, lastChecked, ipAddress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+          [newSSL.id, userId, newSSL.domain, newSSL.issuer, newSSL.expiryDate, newSSL.type, newSSL.status, newSSL.managedBy, newSSL.host, newSSL.lastChecked, newSSL.ipAddress]);
+        successCount++;
+      }
+    } catch (e) {
+      failCount++;
+    }
+  }
+  res.json({ success: successCount, failed: failCount });
 });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
@@ -270,10 +348,45 @@ app.get('/api/data/:userId', (req, res) => {
 
 app.post('/api/domains', (req, res) => {
   const { userId, domain } = req.body;
-  db.run(`INSERT INTO domains (id, user_id, name, registrar, expiryDate, autoRenew, status, lastChecked) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
-    [domain.id, userId, domain.name, domain.registrar, domain.expiryDate, domain.autoRenew || 1, domain.status, domain.lastChecked], (err) => {
+  db.run(`INSERT INTO domains (id, user_id, name, registrar, expiryDate, autoRenew, status, lastChecked, managedBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+    [domain.id, userId, domain.name, domain.registrar, domain.expiryDate, domain.autoRenew || 1, domain.status, domain.lastChecked, domain.managedBy], (err) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ success: true });
+    });
+});
+
+app.put('/api/domains/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, managedBy } = req.body;
+
+  const info = await getDomainInfo(name);
+  if (info.registrar === 'Unknown') {
+    return res.status(400).json({ error: 'Could not verify the updated domain name.' });
+  }
+
+  const status = calculateStatus(info.expiry);
+  const now = new Date().toISOString();
+
+  db.run(`UPDATE domains SET name = ?, managedBy = ?, registrar = ?, expiryDate = ?, status = ?, lastChecked = ? WHERE id = ?`,
+    [name, managedBy, info.registrar, info.expiry, status, now, id], function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: "Domain not found" });
+      }
+      res.json({
+        success: true,
+        updatedDomain: {
+          id,
+          name,
+          managedBy,
+          registrar: info.registrar,
+          expiryDate: info.expiry,
+          status,
+          lastChecked: now,
+        }
+      });
     });
 });
 
@@ -287,8 +400,8 @@ app.delete('/api/domains/:id', (req, res) => {
 
 app.post('/api/ssl', (req, res) => {
   const { userId, ssl } = req.body;
-  db.run(`INSERT INTO ssl_certs (id, user_id, domain, issuer, expiryDate, type, status, managedBy, host, lastChecked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-    [ssl.id, userId, ssl.domain, ssl.issuer, ssl.expiryDate, ssl.type, ssl.status, ssl.managedBy, ssl.host, ssl.lastChecked], (err) => {
+  db.run(`INSERT INTO ssl_certs (id, user_id, domain, issuer, expiryDate, type, status, managedBy, host, lastChecked, ipAddress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+    [ssl.id, userId, ssl.domain, ssl.issuer, ssl.expiryDate, ssl.type, ssl.status, ssl.managedBy, ssl.host, ssl.lastChecked, ssl.ipAddress], (err) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ success: true });
     });
@@ -302,12 +415,38 @@ app.delete('/api/ssl/:id', (req, res) => {
   });
 });
 
+app.put('/api/ssl/:id', (req, res) => {
+  const { id } = req.params;
+  const { domain, managedBy, host, ipAddress } = req.body;
+  db.run(`UPDATE ssl_certs SET domain = ?, managedBy = ?, host = ?, ipAddress = ? WHERE id = ?`,
+    [domain, managedBy, host, ipAddress, id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true });
+    });
+});
+
 app.put('/api/settings', (req, res) => {
   const { userId, smtp, notifications } = req.body;
   db.run(`INSERT OR REPLACE INTO settings (user_id, smtp_config, notification_config) VALUES (?, ?, ?)`, 
     [userId, JSON.stringify(smtp), JSON.stringify(notifications)], () => {
       res.json({ success: true });
     });
+});
+
+app.post('/api/settings/generate-test-credentials', async (req, res) => {
+  try {
+    const account = await nodemailer.createTestAccount();
+    res.json({
+      host: account.smtp.host,
+      port: account.smtp.port,
+      secure: account.smtp.secure,
+      user: account.user,
+      pass: account.pass,
+      useAuth: true,
+    });
+  } catch (e) {
+    res.status(500).json({ error: `Failed to create test account: ${e.message}` });
+  }
 });
 
 app.post('/api/settings/test-email', async (req, res) => {
@@ -317,27 +456,39 @@ app.post('/api/settings/test-email', async (req, res) => {
   }
 
   try {
-    const transporter = nodemailer.createTransport({
+    const transportOptions = {
       host: smtp.host,
       port: parseInt(smtp.port),
       secure: smtp.secure,
-      auth: {
-        user: smtp.user,
-        pass: smtp.pass
-      },
       tls: {
         rejectUnauthorized: false
       }
-    });
+    };
 
-    await transporter.sendMail({
+    if (smtp.useAuth) {
+      transportOptions.auth = {
+        user: smtp.user,
+        pass: smtp.pass
+      };
+    }
+
+    const transporter = nodemailer.createTransport(transportOptions);
+
+    const info = await transporter.sendMail({
       from: `"SimpleTrack Alerts" <${smtp.fromEmail}>`,
       to: smtp.toEmail,
       subject: '✔️ SimpleTrack Test Email',
       text: 'This is a test email from your SimpleTrack instance. If you received this, your SMTP settings are correct!',
     });
 
-    res.json({ success: true, message: 'Test email sent successfully!' });
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+
+    res.json({ 
+      success: true, 
+      message: 'Test email sent successfully!',
+      previewUrl: previewUrl || null
+    });
+
   } catch (e) {
     res.status(500).json({ success: false, error: `Failed to send email: ${e.message}` });
   }

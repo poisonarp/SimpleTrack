@@ -53,6 +53,30 @@ export const saveDomain = async (userId: string, domain: Domain) => {
   syncLocalData(userId, (data) => ({ ...data, domains: [domain, ...data.domains] }));
 };
 
+export const updateDomain = async (userId: string, domain: Domain): Promise<Domain | null> => {
+  try {
+    const response = await fetch(`${API_BASE}/domains/${domain.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: domain.name,
+        managedBy: domain.managedBy,
+      })
+    });
+    if (response.ok) {
+      const result = await response.json();
+      return result.updatedDomain;
+    }
+     const error = await response.json();
+     throw new Error(error.error || 'Failed to update domain');
+  } catch (err) {
+    console.error(err);
+    // For local fallback, we just update with what we have
+    syncLocalData(userId, (data) => ({ ...data, domains: data.domains.map(d => d.id === domain.id ? domain : d) }));
+    return null; // Indicate that the server update failed
+  }
+};
+
 export const deleteDomain = async (userId: string, domainId: string) => {
   try {
     const response = await fetch(`${API_BASE}/domains/${domainId}`, { method: 'DELETE' });
@@ -81,6 +105,23 @@ export const deleteSSLCert = async (userId: string, sslId: string) => {
   syncLocalData(userId, (data) => ({ ...data, sslCerts: data.sslCerts.filter(s => s.id !== sslId) }));
 };
 
+export const updateSSLCert = async (userId: string, ssl: SSLCertificate) => {
+  try {
+    const response = await fetch(`${API_BASE}/ssl/${ssl.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        domain: ssl.domain,
+        managedBy: ssl.managedBy,
+        host: ssl.host,
+        ipAddress: ssl.ipAddress,
+      })
+    });
+    if (response.ok) return;
+  } catch (err) {}
+  syncLocalData(userId, (data) => ({ ...data, sslCerts: data.sslCerts.map(s => s.id === ssl.id ? ssl : s) }));
+};
+
 export const saveSettings = async (userId: string, smtp: SMTPSettings, notifications: NotificationSettings) => {
   try {
     await fetch(`${API_BASE}/settings`, {
@@ -91,6 +132,17 @@ export const saveSettings = async (userId: string, smtp: SMTPSettings, notificat
   } catch (err) {}
   syncLocalData(userId, (data) => ({ ...data, smtpSettings: smtp, notificationSettings: notifications }));
 };
+
+export const generateTestSmtpCredentials = async (): Promise<Partial<SMTPSettings>> => {
+  const response = await fetch(`${API_BASE}/settings/generate-test-credentials`, {
+    method: 'POST',
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to generate test credentials.');
+  }
+  return result;
+}
 
 export const testSmtpSettings = async (smtp: SMTPSettings) => {
   const response = await fetch(`${API_BASE}/settings/test-email`, {
@@ -104,3 +156,16 @@ export const testSmtpSettings = async (smtp: SMTPSettings) => {
   }
   return result;
 };
+
+export const bulkImport = async (userId: string, type: 'domains' | 'ssl', data: Record<string, string>[]) => {
+  const response = await fetch(`${API_BASE}/bulk-import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, type, data })
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || `Bulk import failed for ${type}.`);
+  }
+  return result;
+}

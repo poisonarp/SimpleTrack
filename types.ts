@@ -15,6 +15,7 @@ export interface Domain {
   autoRenew: boolean;
   status: Status;
   lastChecked: string;
+  managedBy?: string;
 }
 
 export interface SSLCertificate {
@@ -27,6 +28,7 @@ export interface SSLCertificate {
   managedBy: string;
   host: string;
   lastChecked: string;
+  ipAddress?: string;
 }
 
 export interface SMTPSettings {
@@ -37,6 +39,7 @@ export interface SMTPSettings {
   fromEmail: string;
   toEmail: string;
   secure: boolean;
+  useAuth: boolean;
 }
 
 export interface NotificationSettings {
