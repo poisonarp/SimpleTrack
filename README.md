@@ -1,5 +1,6 @@
 This is a simple Domain and SSL Certificate Tracking application to track expirations of both Domains and SSL Certificates and provide notifications before they expire (7,15,and 30 days in advance).  Notifications are done by SMTP and Dashboard. 
-NOTE: this has only been tested on Debian 13 lxc 
+NOTE: this has only been tested on Debian 13 lxc.
+
 to install follow these steps:
  1. download simpletrack
  2. create a folder on your debian 13 server (example: /etc/simpletrack)
