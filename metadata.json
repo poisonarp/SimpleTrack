@@ -1,0 +1,5 @@
+{
+  "name": "SimpleTrack Domain & SSL",
+  "description": "A modern dashboard for tracking domain registrations and SSL certificate expirations using real-time programmatic lookups.",
+  "requestFramePermissions": []
+}
