@@ -7,7 +7,7 @@ to install follow these steps:
  4. cd into your folder ( cd /etc/simpletrack )
  5. chmod +x install.sh
  6. ./install
- 7. You should now be able to access the application at http://ip address of your server:3000
+ 7. You should now be able to access the application at http://ip-address-of-your-server:3000
  8. Default login is: Username:admin Password:admin
     
 <img width="1278" height="751" alt="dashboard" src="https://github.com/user-attachments/assets/055b9ea6-1f78-4067-8545-edc2b6d83ccd" />
