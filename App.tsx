@@ -7,7 +7,7 @@ import BulkImportModal from './components/BulkImportModal';
 import { Domain, SSLCertificate, ViewType, Status, User, SMTPSettings, NotificationSettings, AlertLog } from './types';
 import { verifyDomainInfo, verifySSLInfo, getStatusFromDate } from './services/auditService';
 import { getSession, logout, changePassword } from './services/authService';
-import { loadAllData, saveDomain, deleteDomain, saveSSLCert, deleteSSLCert, updateSSLCert, updateDomain, saveSettings, syncAllData, testSmtpSettings, generateTestSmtpCredentials, bulkImport } from './services/dataService';
+import { loadAllData, saveDomain, deleteDomain, saveSSLCert, deleteSSLCert, updateSSLCert, updateDomain, saveSettings, syncAllData, testSmtpSettings, generateTestSmtpCredentials, bulkImport, bulkDeleteDomains, bulkDeleteSslCerts } from './services/dataService';
 
 type SortConfig = {
   key: string;
@@ -35,6 +35,8 @@ const App: React.FC = () => {
   const [newSslData, setNewSslData] = useState({ domain: '', host: '', managedBy: '', ipAddress: '' });
   const [isVerifyingDomain, setIsVerifyingDomain] = useState(false);
   const [isVerifyingSSL, setIsVerifyingSSL] = useState(false);
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [selectedSslCerts, setSelectedSslCerts] = useState<string[]>([]);
 
   // Settings State
   const [smtpSettings, setSmtpSettings] = useState<SMTPSettings>({ host: '', port: '587', user: '', pass: '', fromEmail: '', toEmail: '', secure: false, useAuth: true });
@@ -70,6 +72,12 @@ const App: React.FC = () => {
     }
     setIsInitialLoad(false);
   }, []);
+  
+  // Clear selections when view changes
+  useEffect(() => {
+    setSelectedDomains([]);
+    setSelectedSslCerts([]);
+  }, [view]);
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -272,6 +280,24 @@ const App: React.FC = () => {
     await fetchUserData(user); // Refresh data after import
     return result;
   };
+  
+  const handleBulkDeleteDomains = async () => {
+    if (!user || selectedDomains.length === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedDomains.length} selected domains?`)) {
+      await bulkDeleteDomains(user.id, selectedDomains);
+      setDomains(prev => prev.filter(d => !selectedDomains.includes(d.id)));
+      setSelectedDomains([]);
+    }
+  };
+  
+  const handleBulkDeleteSslCerts = async () => {
+    if (!user || selectedSslCerts.length === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedSslCerts.length} selected SSL certificates?`)) {
+      await bulkDeleteSslCerts(user.id, selectedSslCerts);
+      setSSLCerts(prev => prev.filter(s => !selectedSslCerts.includes(s.id)));
+      setSelectedSslCerts([]);
+    }
+  };
 
   const navigateToFiltered = (view: ViewType, filter: 'expiring' | 'expired') => {
     setFilterType(filter);
@@ -325,6 +351,22 @@ const App: React.FC = () => {
     }
     return sortData(result, sortConfig);
   }, [sslCerts, filterType, sortConfig]);
+  
+  const handleSelectDomain = (id: string, checked: boolean) => {
+    setSelectedDomains(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
+  };
+  
+  const handleSelectAllDomains = (checked: boolean) => {
+    setSelectedDomains(checked ? filteredDomains.map(d => d.id) : []);
+  };
+  
+  const handleSelectSslCert = (id: string, checked: boolean) => {
+    setSelectedSslCerts(prev => checked ? [...prev, id] : prev.filter(i => i !== id));
+  };
+  
+  const handleSelectAllSslCerts = (checked: boolean) => {
+    setSelectedSslCerts(checked ? filteredSSL.map(s => s.id) : []);
+  };
 
   const getStatusColor = (status: Status) => {
     switch (status) {
@@ -442,6 +484,12 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-slate-800">Domain Registrations</h2>
                 <div className="flex items-center gap-2">
+                  {selectedDomains.length > 0 && (
+                    <button onClick={handleBulkDeleteDomains} className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      Delete ({selectedDomains.length})
+                    </button>
+                  )}
                   <button onClick={() => setShowBulkImport('domains')} className="bg-white hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 transition-all flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                     Bulk Import
@@ -456,6 +504,7 @@ const App: React.FC = () => {
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
+                      <th className="px-4 py-4 w-12 text-center"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" onChange={e => handleSelectAllDomains(e.target.checked)} checked={filteredDomains.length > 0 && selectedDomains.length === filteredDomains.length} /></th>
                       <th onClick={() => requestSort('name')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Domain <SortIcon column="name" /></div></th>
                       <th onClick={() => requestSort('managedBy')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Managed By <SortIcon column="managedBy" /></div></th>
                       <th onClick={() => requestSort('registrar')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Registrar <SortIcon column="registrar" /></div></th>
@@ -466,7 +515,8 @@ const App: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredDomains.map(d => (
-                      <tr key={d.id} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={d.id} className={`hover:bg-slate-50/50 transition-colors ${selectedDomains.includes(d.id) ? 'bg-blue-50' : ''}`}>
+                        <td className="px-4 text-center"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" checked={selectedDomains.includes(d.id)} onChange={e => handleSelectDomain(d.id, e.target.checked)} /></td>
                         <td className="px-6 py-4 font-bold text-slate-800 text-sm">{d.name}</td>
                         <td className="px-6 py-4 text-slate-600 text-sm">{d.managedBy || 'N/A'}</td>
                         <td className="px-6 py-4 text-slate-600 text-sm">{d.registrar}</td>
@@ -495,6 +545,12 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-slate-800">SSL Portfolio</h2>
                 <div className="flex items-center gap-2">
+                  {selectedSslCerts.length > 0 && (
+                    <button onClick={handleBulkDeleteSslCerts} className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      Delete ({selectedSslCerts.length})
+                    </button>
+                  )}
                   <button onClick={() => setShowBulkImport('ssl')} className="bg-white hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 transition-all flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                     Bulk Import
@@ -509,23 +565,27 @@ const App: React.FC = () => {
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
+                      <th className="px-4 py-4 w-12 text-center"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" onChange={e => handleSelectAllSslCerts(e.target.checked)} checked={filteredSSL.length > 0 && selectedSslCerts.length === filteredSSL.length} /></th>
+                      <th onClick={() => requestSort('expiryDate')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Expiry <SortIcon column="expiryDate" /></div></th>
                       <th onClick={() => requestSort('domain')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Domain <SortIcon column="domain" /></div></th>
+                      <th onClick={() => requestSort('issuer')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Issued By <SortIcon column="issuer" /></div></th>
+                      <th onClick={() => requestSort('managedBy')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Managed By <SortIcon column="managedBy" /></div></th>
                       <th onClick={() => requestSort('host')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Host <SortIcon column="host" /></div></th>
                       <th onClick={() => requestSort('ipAddress')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">IP Address <SortIcon column="ipAddress" /></div></th>
-                      <th onClick={() => requestSort('managedBy')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Managed By <SortIcon column="managedBy" /></div></th>
-                      <th onClick={() => requestSort('expiryDate')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Expiry <SortIcon column="expiryDate" /></div></th>
                       <th onClick={() => requestSort('status')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Status <SortIcon column="status" /></div></th>
                       <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredSSL.map(s => (
-                      <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={s.id} className={`hover:bg-slate-50/50 transition-colors ${selectedSslCerts.includes(s.id) ? 'bg-indigo-50' : ''}`}>
+                        <td className="px-4 text-center"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" checked={selectedSslCerts.includes(s.id)} onChange={e => handleSelectSslCert(s.id, e.target.checked)} /></td>
+                        <td className="px-6 py-4 text-slate-600 text-sm">{s.expiryDate}</td>
                         <td className="px-6 py-4 font-bold text-slate-800 text-sm">{s.domain}</td>
+                        <td className="px-6 py-4 text-slate-600 text-sm">{s.issuer}</td>
+                        <td className="px-6 py-4 text-slate-600 text-sm">{s.managedBy}</td>
                         <td className="px-6 py-4 text-slate-600 text-sm">{s.host}</td>
                         <td className="px-6 py-4 text-slate-600 text-sm font-mono">{s.ipAddress || 'N/A'}</td>
-                        <td className="px-6 py-4 text-slate-600 text-sm">{s.managedBy}</td>
-                        <td className="px-6 py-4 text-slate-600 text-sm">{s.expiryDate}</td>
                         <td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${getStatusColor(s.status)}`}>{s.status}</span></td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -739,7 +799,6 @@ const App: React.FC = () => {
                 <input
                   type="text"
                   className="w-full px-4 py-2 mt-1 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Defaults to domain"
                   value={newSslData.host}
                   onChange={(e) => setNewSslData({...newSslData, host: e.target.value})}
                 />

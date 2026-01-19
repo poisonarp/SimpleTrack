@@ -398,6 +398,18 @@ app.delete('/api/domains/:id', (req, res) => {
   });
 });
 
+app.delete('/api/domains/bulk', (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Invalid request: "ids" must be a non-empty array.' });
+  }
+  const placeholders = ids.map(() => '?').join(',');
+  db.run(`DELETE FROM domains WHERE id IN (${placeholders})`, ids, function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ success: true, deleted: this.changes });
+  });
+});
+
 app.post('/api/ssl', (req, res) => {
   const { userId, ssl } = req.body;
   db.run(`INSERT INTO ssl_certs (id, user_id, domain, issuer, expiryDate, type, status, managedBy, host, lastChecked, ipAddress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
@@ -412,6 +424,18 @@ app.delete('/api/ssl/:id', (req, res) => {
   db.run(`DELETE FROM ssl_certs WHERE id = ?`, [id], (err) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ success: true });
+  });
+});
+
+app.delete('/api/ssl/bulk', (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Invalid request: "ids" must be a non-empty array.' });
+  }
+  const placeholders = ids.map(() => '?').join(',');
+  db.run(`DELETE FROM ssl_certs WHERE id IN (${placeholders})`, ids, function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ success: true, deleted: this.changes });
   });
 });
 

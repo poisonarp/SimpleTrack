@@ -85,6 +85,18 @@ export const deleteDomain = async (userId: string, domainId: string) => {
   syncLocalData(userId, (data) => ({ ...data, domains: data.domains.filter(d => d.id !== domainId) }));
 };
 
+export const bulkDeleteDomains = async (userId: string, domainIds: string[]) => {
+  try {
+    const response = await fetch(`${API_BASE}/domains/bulk`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: domainIds })
+    });
+    if (response.ok) return;
+  } catch (err) {}
+  syncLocalData(userId, (data) => ({ ...data, domains: data.domains.filter(d => !domainIds.includes(d.id)) }));
+};
+
 export const saveSSLCert = async (userId: string, ssl: SSLCertificate) => {
   try {
     const response = await fetch(`${API_BASE}/ssl`, {
@@ -103,6 +115,18 @@ export const deleteSSLCert = async (userId: string, sslId: string) => {
     if (response.ok) return;
   } catch (err) {}
   syncLocalData(userId, (data) => ({ ...data, sslCerts: data.sslCerts.filter(s => s.id !== sslId) }));
+};
+
+export const bulkDeleteSslCerts = async (userId: string, sslIds: string[]) => {
+  try {
+    const response = await fetch(`${API_BASE}/ssl/bulk`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: sslIds })
+    });
+    if (response.ok) return;
+  } catch (err) {}
+  syncLocalData(userId, (data) => ({ ...data, sslCerts: data.sslCerts.filter(s => !sslIds.includes(s.id)) }));
 };
 
 export const updateSSLCert = async (userId: string, ssl: SSLCertificate) => {
