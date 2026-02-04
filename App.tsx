@@ -50,6 +50,7 @@ const App: React.FC = () => {
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [passMsg, setPassMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const fetchUserData = async (u: User) => {
     try {
@@ -59,6 +60,7 @@ const App: React.FC = () => {
       if (data.smtpSettings) setSmtpSettings(data.smtpSettings);
       if (data.notificationSettings) setNotifSettings(data.notificationSettings);
       if (data.alertLogs) setAlertLogs(data.alertLogs);
+      setLastRefresh(new Date());
     } catch (err) {
       console.error("Fetch Error:", err);
     }
@@ -72,6 +74,18 @@ const App: React.FC = () => {
     }
     setIsInitialLoad(false);
   }, []);
+
+  // Auto-refresh SSL and domain data every 5 minutes
+  useEffect(() => {
+    if (!user) return;
+    
+    const refreshInterval = setInterval(() => {
+      console.log('Auto-refreshing data...');
+      fetchUserData(user);
+    }, 300000); // 5 minutes in milliseconds
+
+    return () => clearInterval(refreshInterval);
+  }, [user]);
   
   // Clear selections when view changes
   useEffect(() => {
@@ -320,6 +334,48 @@ const App: React.FC = () => {
     });
   };
 
+  const downloadCSV = (csv: string, filename: string) => {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportDomains = () => {
+    if (filteredDomains.length === 0) return;
+    const headers = ['Domain', 'Managed By', 'Registrar', 'Expiry', 'Status'];
+    const rows = filteredDomains.map(d => [
+      d.name,
+      d.managedBy || 'N/A',
+      d.registrar,
+      d.expiryDate,
+      d.status
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    downloadCSV(csvContent, `simpletrack_domains_${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  const exportSSL = () => {
+    if (filteredSSL.length === 0) return;
+    const headers = ['Expiry', 'Domain', 'Issued By', 'Managed By', 'Host', 'IP Address', 'Status'];
+    const rows = filteredSSL.map(s => [
+      s.expiryDate,
+      s.domain,
+      s.issuer,
+      s.managedBy,
+      s.host,
+      s.ipAddress || 'N/A',
+      s.status
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    downloadCSV(csvContent, `simpletrack_ssl_${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
   const filteredDomains = useMemo(() => {
     let result = domains;
     if (filterType === 'expiring') {
@@ -400,7 +456,7 @@ const App: React.FC = () => {
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold text-slate-800">
-              {view === 'dashboard' ? 'Overview' : view === 'domains' ? 'Domains' : view === 'ssl' ? 'SSL' : 'Settings'}
+              {view === 'dashboard' ? 'Overview' : view === 'domains' ? 'Domains' : view === 'ssl' ? 'SSL Certificates' : view === 'settings-smtp' ? 'SMTP Configuration' : 'Security & Password'}
             </h1>
             {isSyncing && (
               <div className="flex items-center gap-2 text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-bold uppercase">
@@ -411,6 +467,11 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-6">
+            {lastRefresh && (
+              <div className="text-xs text-slate-500">
+                Last updated: {lastRefresh.toLocaleTimeString()}
+              </div>
+            )}
             <button 
               onClick={handleManualSync} 
               disabled={isSyncing}
@@ -480,8 +541,8 @@ const App: React.FC = () => {
           )}
 
           {view === 'domains' && (
-            <div className="space-y-4 animate-in slide-in-from-bottom-4">
-              <div className="flex justify-between items-center">
+            <div className="space-y-4 animate-in slide-in-from-bottom-4 h-full flex flex-col">
+              <div className="flex justify-between items-center shrink-0">
                 <h2 className="text-lg font-bold text-slate-800">Domain Registrations</h2>
                 <div className="flex items-center gap-2">
                   {selectedDomains.length > 0 && (
@@ -490,6 +551,10 @@ const App: React.FC = () => {
                       Delete ({selectedDomains.length})
                     </button>
                   )}
+                  <button onClick={exportDomains} className="bg-white hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 transition-all flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Export CSV
+                  </button>
                   <button onClick={() => setShowBulkImport('domains')} className="bg-white hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 transition-all flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                     Bulk Import
@@ -500,17 +565,17 @@ const App: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <div className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-auto custom-scrollbar-blue max-h-[calc(100vh-220px)] relative">
+                <table className="w-full text-left min-w-[1000px] border-collapse">
+                  <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm">
                     <tr>
-                      <th className="px-4 py-4 w-12 text-center"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" onChange={e => handleSelectAllDomains(e.target.checked)} checked={filteredDomains.length > 0 && selectedDomains.length === filteredDomains.length} /></th>
-                      <th onClick={() => requestSort('name')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Domain <SortIcon column="name" /></div></th>
-                      <th onClick={() => requestSort('managedBy')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Managed By <SortIcon column="managedBy" /></div></th>
-                      <th onClick={() => requestSort('registrar')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Registrar <SortIcon column="registrar" /></div></th>
-                      <th onClick={() => requestSort('expiryDate')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Expiry <SortIcon column="expiryDate" /></div></th>
-                      <th onClick={() => requestSort('status')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Status <SortIcon column="status" /></div></th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                      <th className="px-4 py-4 w-12 text-center bg-slate-50 sticky top-0"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" onChange={e => handleSelectAllDomains(e.target.checked)} checked={filteredDomains.length > 0 && selectedDomains.length === filteredDomains.length} /></th>
+                      <th onClick={() => requestSort('name')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Domain <SortIcon column="name" /></div></th>
+                      <th onClick={() => requestSort('managedBy')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Managed By <SortIcon column="managedBy" /></div></th>
+                      <th onClick={() => requestSort('registrar')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Registrar <SortIcon column="registrar" /></div></th>
+                      <th onClick={() => requestSort('expiryDate')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Expiry <SortIcon column="expiryDate" /></div></th>
+                      <th onClick={() => requestSort('status')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Status <SortIcon column="status" /></div></th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-slate-50 sticky top-0">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -541,8 +606,8 @@ const App: React.FC = () => {
           )}
 
           {view === 'ssl' && (
-            <div className="space-y-4 animate-in slide-in-from-bottom-4">
-              <div className="flex justify-between items-center">
+            <div className="space-y-4 animate-in slide-in-from-bottom-4 h-full flex flex-col">
+              <div className="flex justify-between items-center shrink-0">
                 <h2 className="text-lg font-bold text-slate-800">SSL Portfolio</h2>
                 <div className="flex items-center gap-2">
                   {selectedSslCerts.length > 0 && (
@@ -551,6 +616,10 @@ const App: React.FC = () => {
                       Delete ({selectedSslCerts.length})
                     </button>
                   )}
+                  <button onClick={exportSSL} className="bg-white hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 transition-all flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Export CSV
+                  </button>
                   <button onClick={() => setShowBulkImport('ssl')} className="bg-white hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 transition-all flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                     Bulk Import
@@ -561,19 +630,19 @@ const App: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <div className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-xl overflow-auto custom-scrollbar-indigo max-h-[calc(100vh-220px)] relative">
+                <table className="w-full text-left min-w-[1200px] border-collapse">
+                  <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm">
                     <tr>
-                      <th className="px-4 py-4 w-12 text-center"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" onChange={e => handleSelectAllSslCerts(e.target.checked)} checked={filteredSSL.length > 0 && selectedSslCerts.length === filteredSSL.length} /></th>
-                      <th onClick={() => requestSort('expiryDate')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Expiry <SortIcon column="expiryDate" /></div></th>
-                      <th onClick={() => requestSort('domain')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Domain <SortIcon column="domain" /></div></th>
-                      <th onClick={() => requestSort('issuer')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Issued By <SortIcon column="issuer" /></div></th>
-                      <th onClick={() => requestSort('managedBy')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Managed By <SortIcon column="managedBy" /></div></th>
-                      <th onClick={() => requestSort('host')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Host <SortIcon column="host" /></div></th>
-                      <th onClick={() => requestSort('ipAddress')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">IP Address <SortIcon column="ipAddress" /></div></th>
-                      <th onClick={() => requestSort('status')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest"><div className="flex items-center">Status <SortIcon column="status" /></div></th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                      <th className="px-4 py-4 w-12 text-center bg-slate-50 sticky top-0"><input type="checkbox" className="w-4 h-4 rounded text-blue-600" onChange={e => handleSelectAllSslCerts(e.target.checked)} checked={filteredSSL.length > 0 && selectedSslCerts.length === filteredSSL.length} /></th>
+                      <th onClick={() => requestSort('expiryDate')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Expiry <SortIcon column="expiryDate" /></div></th>
+                      <th onClick={() => requestSort('domain')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Domain <SortIcon column="domain" /></div></th>
+                      <th onClick={() => requestSort('issuer')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Issued By <SortIcon column="issuer" /></div></th>
+                      <th onClick={() => requestSort('managedBy')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Managed By <SortIcon column="managedBy" /></div></th>
+                      <th onClick={() => requestSort('host')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Host <SortIcon column="host" /></div></th>
+                      <th onClick={() => requestSort('ipAddress')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">IP Address <SortIcon column="ipAddress" /></div></th>
+                      <th onClick={() => requestSort('status')} className="group cursor-pointer px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 sticky top-0"><div className="flex items-center">Status <SortIcon column="status" /></div></th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right bg-slate-50 sticky top-0">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -605,7 +674,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {view === 'settings' && (
+          {view === 'settings-smtp' && (
             <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
               <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-3 mb-6">
@@ -703,7 +772,11 @@ const App: React.FC = () => {
                   </div>
                 </form>
               </div>
+            </div>
+          )}
 
+          {view === 'settings-password' && (
+            <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
               <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="bg-slate-100 p-2 rounded-lg text-slate-600">
@@ -711,12 +784,27 @@ const App: React.FC = () => {
                   </div>
                   <h3 className="text-xl font-bold text-slate-800">Security Credentials</h3>
                 </div>
+                <p className="text-sm text-slate-500 mb-6 italic">Ensure you choose a strong, unique password to protect your monitoring portfolio.</p>
                 <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
                    {passMsg && <div className={`p-4 rounded-lg text-sm font-medium ${passMsg.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{passMsg.text}</div>}
-                   <input type="password" placeholder="Current Password" required className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={oldPass} onChange={e => setOldPass(e.target.value)} />
-                   <input type="password" placeholder="New Password" required className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={newPass} onChange={e => setNewPass(e.target.value)} />
-                   <input type="password" placeholder="Confirm Password" required className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} />
-                   <button type="submit" className="bg-slate-900 text-white px-8 py-2 rounded-lg font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-transform">Update Password</button>
+                   <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase">Current Password</label>
+                    <input type="password" placeholder="••••••••" required className="w-full mt-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={oldPass} onChange={e => setOldPass(e.target.value)} />
+                   </div>
+                   <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase">New Password</label>
+                    <input type="password" placeholder="••••••••" required className="w-full mt-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={newPass} onChange={e => setNewPass(e.target.value)} />
+                   </div>
+                   <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase">Confirm New Password</label>
+                    <input type="password" placeholder="••••••••" required className="w-full mt-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} />
+                   </div>
+                   <div className="pt-4">
+                    <button type="submit" className="w-full bg-slate-900 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-slate-900/20 active:scale-95 transition-transform flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                      Update Security Key
+                    </button>
+                   </div>
                 </form>
               </div>
             </div>

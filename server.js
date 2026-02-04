@@ -518,8 +518,9 @@ app.post('/api/settings/test-email', async (req, res) => {
   }
 });
 
+// Auto-sync every 4 hours (14400000ms) instead of 24 hours for more frequent checks
 setInterval(() => {
-  console.log('Running daily background sync & notification audit...');
+  console.log('Running 4-hour background sync & notification audit...');
   db.all(`SELECT id FROM users`, [], async (err, users) => {
     if (users) {
       for (const u of users) {
@@ -528,7 +529,7 @@ setInterval(() => {
       }
     }
   });
-}, 86400000);
+}, 14400000); // 4 hours in milliseconds
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));

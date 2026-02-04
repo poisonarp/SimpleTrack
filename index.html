@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16,6 +17,29 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f8fafc;
+        }
+        /* Custom scrollbar styling for accessibility */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+            border: 2px solid #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .custom-scrollbar-blue::-webkit-scrollbar-thumb {
+            background: #3b82f6;
+        }
+        .custom-scrollbar-indigo::-webkit-scrollbar-thumb {
+            background: #6366f1;
         }
     </style>
 <script type="importmap">

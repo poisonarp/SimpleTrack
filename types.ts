@@ -1,5 +1,4 @@
 
-
 export enum Status {
   HEALTHY = 'Healthy',
   WARNING = 'Warning',
@@ -61,7 +60,7 @@ export interface AlertLog {
   status: 'Sent' | 'Failed';
 }
 
-export type ViewType = 'dashboard' | 'domains' | 'ssl' | 'settings';
+export type ViewType = 'dashboard' | 'domains' | 'ssl' | 'settings-smtp' | 'settings-password';
 
 export interface User {
   id: string;
