@@ -6,7 +6,7 @@ import cors from 'cors';
 import path from 'path';
 import tls from 'tls';
 import dns from 'dns';
-import whois from 'whois-json';
+import whoiser from 'whoiser';
 import nodemailer from 'nodemailer';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -164,10 +164,12 @@ async function getSSLInfo(hostname) {
 
 async function getDomainInfo(domain) {
   try {
-    const data = await whois(domain);
-    const expiryField = data.registryExpiryDate || data.expiryDate || data.expirationDate || data.expiresDate || data.expires;
+    const results = await whoiser(domain, { follow: 1 });
+    const data = Object.values(results).find(r => typeof r === 'object' && !Array.isArray(r)) || {};
+    const expiryField = data['Registry Expiry Date'] || data['Expiry Date'] || data['Expiration Date'] || data['expires'] || data['Expires On'];
+    const registrar = data['Registrar'] || data['registrar'] || 'Unknown Registrar';
     return {
-      registrar: data.registrar || 'Unknown Registrar',
+      registrar,
       expiry: expiryField ? new Date(expiryField).toISOString().split('T')[0] : new Date(Date.now() + 31536000000).toISOString().split('T')[0]
     };
   } catch (e) {

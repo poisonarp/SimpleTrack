@@ -7,14 +7,17 @@ WORKDIR /app
 # Copy package.json
 COPY package.json ./
 
-# Install all dependencies (including devDependencies for development)
-RUN npm install && npx vite --version
+# Install all dependencies (including devDependencies for the build step)
+RUN npm install
 
 # Copy all app files
 COPY . .
 
+# Build the Vite frontend
+RUN npm run build
+
 # Expose port 3000
 EXPOSE 3000
 
-# Start the app on port 3000
-CMD ["npm", "run", "dev", "--", "--port", "3000", "--host"]
+# Run the Express server (serves built frontend + API routes)
+CMD ["node", "server.js"]
