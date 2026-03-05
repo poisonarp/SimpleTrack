@@ -17,7 +17,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = process.env.PORT || 3000;
 
-const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
+const dataDir = path.join(__dirname, 'data');
+const db = new sqlite3.Database(path.join(dataDir, 'database.sqlite'));
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' })); // Increase limit for bulk imports

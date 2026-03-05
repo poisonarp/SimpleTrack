@@ -7,3 +7,8 @@ services:
     environment:
       - NODE_ENV=production
     restart: unless-stopped
+    volumes:
+      - simpletrack-data:/app/data
+
+volumes:
+  simpletrack-data:

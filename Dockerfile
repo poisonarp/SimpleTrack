@@ -16,6 +16,9 @@ COPY . .
 # Build the Vite frontend
 RUN npm run build
 
+# Create persistent data directory
+RUN mkdir -p /app/data
+
 # Expose port 3000
 EXPOSE 3000
 
